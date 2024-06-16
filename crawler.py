@@ -1,7 +1,10 @@
+import os
+import time
 import concurrent.futures
+from dotenv import load_dotenv
 from selenium import webdriver
 from selenium.webdriver.firefox.service import Service
-from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.firefox.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -11,11 +14,46 @@ import csv
 from youtube_transcript_api import YouTubeTranscriptApi
 import logging
 
-GECKODRIVER_PATH = r"D:/NYCU1122courses/Project/crawler/geckodriver.exe"
-MAX_PAGES = 1
-# Disable logging
-logging.basicConfig(level=logging.CRITICAL)
+load_dotenv()
 
+GECKODRIVER_PATH = os.getenv("GECKODRIVER_PATH")
+TED_ED_EMAIL = os.getenv("TED_ED_EMAIL")
+TED_ED_PASSWORD = os.getenv("TED_ED_PASSWORD")
+SIGN_IN = 1
+
+MAX_PAGES = 1
+
+def click_sign_in_button(firefox):
+    sign_in_button = WebDriverWait(firefox, 10).until(
+        EC.element_to_be_clickable((By.XPATH, "/html/body/header/div/div/div/div/div/a"))
+    )
+    sign_in_button.click()
+    
+def click_continue_button(firefox):
+    continue_button = WebDriverWait(firefox, 15).until(
+        EC.element_to_be_clickable((By.XPATH, "/html/body/div[2]/div/div[2]/form/div/span/span/button"))
+    )
+    continue_button.click()
+
+def enter_email(firefox):
+    email_input = WebDriverWait(firefox, 15).until(
+        EC.presence_of_element_located((By.XPATH, "/html/body/div[2]/div/div[2]/form/label/input"))
+    )
+    email_input.send_keys(TED_ED_EMAIL)
+    time.sleep(1)
+    
+def enter_password(firefox):
+    password_input = WebDriverWait(firefox, 15).until(
+        EC.presence_of_element_located((By.XPATH, "/html/body/div[2]/div/div[2]/form/label[2]/div[2]/input"))
+    )
+    password_input.send_keys(TED_ED_PASSWORD)
+
+def handle_cookie_consent(firefox):
+    WebDriverWait(firefox, 10).until(
+        EC.element_to_be_clickable((By.XPATH, '//*[@id="onetrust-pc-sdk"]/div/div[3]/div[1]/button[1]'))
+    ).click()
+    time.sleep(1)
+    
 def get_youtube_subtitle(youtube_link):
     youtube_id = youtube_link.split('v=')[-1]
     try:
@@ -24,27 +62,57 @@ def get_youtube_subtitle(youtube_link):
         return subtitle
     except:
         return "Transcript not available"
-
-def handle_cookie_consent(chrome):
+    
+def submit_answer_and_check_correctness(firefox, option):
+    # Select the option
+    option.click()
+    
+    # Submit the answer (assuming there's a submit button to click)
+    submit_button = WebDriverWait(firefox, 10).until(
+        EC.element_to_be_clickable((By.XPATH, "/html/body/main/article/div[2]/turbo-frame/div[2]/div[1]/turbo-frame/div/turbo-frame/div/div/form/fieldset/label[1]/button"))
+    )
+    submit_button.click()
+    time.sleep(1)
+    
+     # Check for correctness
     try:
-        WebDriverWait(chrome, 10).until(
-            EC.element_to_be_clickable((By.XPATH, '//*[@id="onetrust-pc-sdk"]/div/div[3]/div[1]/button[1]'))
-        ).click()
+        correct_message = WebDriverWait(firefox, 5).until(
+            EC.visibility_of_element_located((By.XPATH, "//p[contains(@class, 'text-correct-green')]"))
+        )
+        if correct_message:
+            return True  # Correct answer
     except:
-        print("No cookie consent popup found")
+        incorrect_message = WebDriverWait(firefox, 5).until(
+            EC.visibility_of_element_located((By.XPATH, "//p[contains(text(), 'That wasn’t it!')]"))
+        )
+        if incorrect_message:
+            try_again_button = WebDriverWait(firefox, 10).until(
+                EC.element_to_be_clickable((By.XPATH, "//a[contains(text(), 'Try again')]"))
+            )
+            try_again_button.click()
+            time.sleep(1)
+            return False  # Incorrect answer
+
+    return False  # Default to incorrect if neither message is found
 
 def scrape_page(page_number, results, no_transcript_list, log_file):
     options = Options()
-    options.add_experimental_option('excludeSwitches', ['enable-logging'])
-
+    options.binary_location = os.getenv("FIREFOX_BINARY_PATH")
+    options.add_argument('--disable-logging')
     service = Service(executable_path=GECKODRIVER_PATH)
-    firefox = webdriver.Firefox(service=service)
+    firefox = webdriver.Firefox(service=service, options=options)
     
     page_url = f"https://ed.ted.com/lessons.html?direction=desc&page={page_number}&sort=featured-position"
     firefox.get(page_url)
     
-    # Handle cookie consent popup
     handle_cookie_consent(firefox)
+
+    click_sign_in_button(firefox)
+    handle_cookie_consent(firefox)
+    enter_email(firefox)
+    click_continue_button(firefox)
+    enter_password(firefox)
+    click_continue_button(firefox)
     
     # Wait for the lessons grid to load
     WebDriverWait(firefox, 10).until(EC.presence_of_element_located((By.ID, "lessons-grid")))
@@ -123,18 +191,35 @@ def scrape_page(page_number, results, no_transcript_list, log_file):
                     question_text = question_element.text
                     question_data = {
                         "question": question_text,
-                        "options": []
+                        "options": [],
+                        "correct_option": None
                     }
                     options_elements = firefox.find_elements(By.XPATH, "//label[contains(@class, 'cursor-pointer')]")
                     for option in options_elements:
                         option_label = option.find_element(By.XPATH, ".//span[contains(@class, 'rounded-full')]").text
                         option_text = option.find_element(By.XPATH, ".//div[contains(@class, 'leading-6')]").text
                         question_data["options"].append({"label": option_label, "text": option_text})
+                    
+                    # Answer each option and check correctness
+                    for option in options_elements:
+                        print(f"Checking option: {option.text}")
+                        # if submit_answer_and_check_correctness(firefox, option):
+                        #     print(f"Correct option: {option.text}")
+                        #     question_data["correct_option"] = option.text
+                        #     break
+                        # else:
+                        #     print(f"Incorrect option: {option.text}")
+                        #     continue
+
                     lesson_data["multiple-choice"].append(question_data)
+                    print(f"Multiple-choice Question {question_number}: {question_text}")
+                    for option in question_data["options"]:
+                        print(f"{option['label']}) {option['text']}")
                 elif firefox.find_elements(By.XPATH, "//div[@class='w-full max-w-lg']"):
                     question_element = firefox.find_element(By.XPATH, "//div[@class='w-full max-w-lg']/h2")
                     question_text = question_element.text
                     lesson_data["open-answer"].append({"question": question_text})
+                    print(f"Open-answer Question {question_number}: {question_text}")
                 else:
                     break
                 
@@ -143,38 +228,6 @@ def scrape_page(page_number, results, no_transcript_list, log_file):
             except Exception as e:
                 break
             
-        # results.append(lesson_data)
-        # Write result to JSON file
-        with open('dataset.json', 'r+', encoding='utf-8') as f:
-            try:
-                data = json.load(f)
-                data.append(lesson_data)
-                f.seek(0)
-                json.dump(data, f, ensure_ascii=False, indent=4)
-            except json.JSONDecodeError:
-                # If there is a JSON decode error, handle it (e.g., log the error)
-                with open('scrape_log.txt', 'a', encoding='utf-8') as log:
-                    log.write("@" * 30 + "\n")
-                    log.write("Page: " + str(page_number) + ", Video: " + str(video_number) + "\n")
-                    log.write("JSON decode error in dataset.json\n")
-                    log.write("@" * 30 + "\n")
-                
-        # Write result to CSV file
-        # fieldnames = ["page", "lesson", "title", "category", "url", "transcript"]
-        # with open('dataset.csv', 'a', newline='', encoding='utf-8') as csvfile:
-        #     writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-        #     if csvfile.tell() == 0:  # Write header only if the file is empty
-        #         writer.writeheader()
-        #     writer.writerow({
-        #         "page": page_number,
-        #         "lesson": video_number,
-        #         "title": title,
-        #         "category": category,
-        #         "url": lesson_url,
-        #         "transcript": lesson_data["transcript"]
-        #     })
-                
-        # Write log to file
         with open(log_file, 'a', encoding='utf-8') as log:
             log.write(f"[Page: {page_number}, Video: {video_number}] is completed\n")
         
@@ -182,14 +235,14 @@ def scrape_page(page_number, results, no_transcript_list, log_file):
     print("=" * 20)
     print(f"Page {page_number} completed")
     print("=" * 20)
-    
+
 def scrape_ted_ed():
     results = []
     no_transcript_list = []
     log_file = "scrape.log"
 
     # Create a thread pool
-    with concurrent.futures.ThreadPoolExecutor(max_workers=24) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
         future_to_page = {executor.submit(scrape_page, page_number, results, no_transcript_list, log_file): page_number for page_number in range(1, MAX_PAGES + 1)}
 
         for future in concurrent.futures.as_completed(future_to_page):
@@ -200,9 +253,6 @@ def scrape_ted_ed():
                 with open(log_file, 'a', encoding='utf-8') as log:
                     log.write(f"Error processing page {page_number}: {e}\n")
     
-    # Save results to a JSON file
-    # with open('results.json', 'w', encoding='utf-8') as f:
-    #     json.dump(results, f, ensure_ascii=False, indent=4)
 
 if __name__ == "__main__":
     scrape_ted_ed()
