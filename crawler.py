@@ -123,19 +123,27 @@ def scrape_page(page_number, results, no_transcript_list, log_file):
     
     if not video_links:  # If no video links are found, break the loop
         firefox.quit()
-        print("=" * 20)
-        print(f"Page {page_number} completed")
-        print("=" * 20)
+        return
+    
+    video_number = 0
+    for video_link, category_tag in zip(video_links, categories):
+        video_number += 1
+        lesson_url = f"https://ed.ted.com{video_link['href']}"
+        think_url = f"{lesson_url}/think"
+        
+        firefox.get(lesson_url)
+        title = WebDriverWait(firefox, 10).until(
+            EC.visibility_of_element_located((By.XPATH, '//*[@id="main-content"]/article/div[1]/h1'))
+        ).text
 
-    def sign_in(self, firefox):
-        click_element(firefox, "/html/body/header/div/div/div/div/div/a")
-        handle_cookie_consent(firefox)
-        enter_text(firefox, "/html/body/div[2]/div/div[2]/form/label/input", self.email)
-        click_element(firefox, "/html/body/div[2]/div/div[2]/form/div/span/span/button")
-        enter_text(firefox, "/html/body/div[2]/div/div[2]/form/label[2]/div[2]/input", self.password)
-        click_element(firefox, "/html/body/div[2]/div/div[2]/form/div/span/span/button")
+        # Extract the category
+        category = category_tag.text.strip()
 
-    def extract_lesson_data(self, firefox, page_number, video_number, lesson_url, think_url, title, category):
+        # Check if the "Think" section exists by directly trying to access the URL
+        firefox.get(think_url)
+        if "Sorry, we couldn't find that page" in firefox.page_source:
+            continue
+
         lesson_data = {
             "page": page_number,
             "lesson": video_number,
@@ -156,22 +164,27 @@ def scrape_page(page_number, results, no_transcript_list, log_file):
             lesson_data["transcript"] = get_youtube_subtitle(youtube_link)
         except:
             lesson_data["transcript"] = "Transcript not available"
-            self.no_transcript_list.append({
+            no_transcript_list.append({
                 "Title": title,
                 "URL": lesson_url,
                 "Remark": "Transcript not available"
             })
-            write_csv({"Title": title, "URL": lesson_url, "Remark": "Transcript not available"})
-
+            # Write no transcript lesson to a CSV file
+            with open('exception.csv', 'a', newline='', encoding='utf-8') as csvfile:
+                writer = csv.DictWriter(csvfile, fieldnames=['Title', 'URL', 'Remark'])
+                writer.writerow({"Title": title, "URL": lesson_url, "Remark": "Transcript not available"})
+        
         question_number = 1
         while True:
             try:
                 question_url = f"{think_url}?question_number={question_number}"
                 firefox.get(question_url)
 
+                # Check if the question page exists
                 if "Question not found" in firefox.page_source:
                     raise Exception("No more questions")
 
+                # Determine question type by checking for multiple-choice or open-answer
                 if firefox.find_elements(By.XPATH, "//label[contains(@class, 'cursor-pointer')]"):
                     # Multiple-choice question
                     question_element = firefox.find_element(By.TAG_NAME, "legend")
@@ -209,7 +222,7 @@ def scrape_page(page_number, results, no_transcript_list, log_file):
                     print(f"Open-answer Question {question_number}: {question_text}")
                 else:
                     break
-
+                
                 question_number += 1
 
             except Exception as e:
