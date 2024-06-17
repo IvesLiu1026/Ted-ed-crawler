@@ -1,69 +1,71 @@
 
-# TED Ed Crawler Script
+# TedEd Scraper
 
-## Description
+TedEd Scraper is a Python project designed to scrape lesson information, including titles, transcripts, and multiple-choice questions from the TED-Ed website. This script utilizes Selenium for web automation and BeautifulSoup for HTML parsing. It also integrates the YouTube Transcript API to fetch subtitles for the videos.
 
-This script is designed to crawl TED Ed lessons pages and extract video transcripts using Selenium and BeautifulSoup. It automates the process of browsing web pages, handling pop-ups, and collecting specific information for further analysis or processing.
+## Features
+
+- Login to TED-Ed
+- Fetch lesson titles
+- Extract YouTube video links
+- Retrieve video transcripts in multiple languages
+- Extract multiple-choice questions and options
+- Determine correct answers to questions
+- Save results in JSONL format
 
 ## Installation
 
 1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/IvesLiu1026/Ted-ed-crawler.git
-   ```
 
-2. **Navigate to the project directory:**
-   ```bash
-   cd repository-name
-   ```
+```sh
+git clone https://github.com/IvesLiu1026/Ted-ed-crawler.git
+cd Ted-ed-crawler
+```
 
-3. **Create and activate a virtual environment (optional but recommended):**
-   ```bash
-   python3 -m venv venv
-   source venv/bin/activate  # On Windows use `venv\Scripts\activate`
-   ```
+2. **Create and activate a virtual environment (optional but recommended):**
+```bash
+python3 -m venv venv
+source venv/bin/activate  # On Windows use `venv\Scripts\activate`
+```
 
-4. **Install the required dependencies:**
-   ```bash
-   pip install -r requirements.txt
-   ```
+3. **Install the required Python packages:**
 
-   Make sure you have `chromedriver` installed and available in your PATH. You can download it from [here](https://googlechromelabs.github.io/chrome-for-testing/known-good-versions-with-downloads.json).
+```sh
+pip install -r requirements.txt
+```
+
+4. **Set up environment variables:**
+
+Create a `.env` file in the root directory of the project and add the following lines:
+
+```sh
+GECKODRIVER_PATH=/path/to/geckodriver
+FIREFOX_BINARY_PATH=/path/to/firefox
+TED_ED_EMAIL=your_teded_email
+TED_ED_PASSWORD=your_teded_password
+```
+
+Replace `/path/to/geckodriver`, `/path/to/firefox`, `your_teded_email`, and `your_teded_password` with the appropriate values.
 
 ## Usage
 
-To run the script, use the following command:
-```bash
+Run the scraper by executing:
+
+```sh
 python crawler.py
 ```
 
-You can customize the script's behavior by modifying the configuration variables at the beginning of the `crawler.py` file.
+The scraper will log in to TED-Ed, navigate through the lessons, and save the results in a `results.jsonl` file. It will also log any issues encountered during the scraping process in `scrape.log`.
 
-## Features
+## File Structure
 
-- Automated web page browsing using Selenium.
-- Data extraction using BeautifulSoup.
-- Handles cookie consent pop-ups.
-- Fetches YouTube video transcripts.
-- Configurable crawling and extraction settings.
-
-## Configuration
-
-The script allows customization through several configuration variables defined in the `crawler.py` file. Here are some key configurations you can modify:
-
-- `CHROMEDRIVER_PATH`: Path to the chromedriver executable.
-- `START_URL`: The initial URL to start crawling from.
-- `MAX_PAGES`: The maximum number of pages to crawl.
-- `OUTPUT_FILE`: The file where the extracted data will be saved.
-- `HEADLESS_MODE`: Boolean to run the browser in headless mode.
-
-```python
-# Example configuration in crawler.py
-CHROMEDRIVER_PATH = r"path/to/your/chromedriver"
-MAX_PAGES = 123
-```
-Notice that adjust the max_worker variable based on your PC configuration.
+- `teded_scraper.py`: Main script that performs the web scraping.
+- `requirements.txt`: List of Python packages required for the project.
+- `.env`: Environment variables for sensitive information (not included in the repository).
+- `scrape.log`: Log file for tracking the scraping process.
+- `results.jsonl`: File where the scraped data is saved in JSONL format.
+- `exception.csv`: File where lessons without transcripts are logged.
 
 ## License
 
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License. See the `LICENSE` file for more details.

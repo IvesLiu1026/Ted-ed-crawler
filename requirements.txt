@@ -1,4 +1,4 @@
-
 selenium==4.8.0
 beautifulsoup4
 youtube-transcript-api
+python-dotenv
