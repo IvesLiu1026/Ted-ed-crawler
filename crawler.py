@@ -1,7 +1,9 @@
 import os
+import re
+import csv
 import time
-import concurrent.futures
 import json
+import concurrent.futures
 from dotenv import load_dotenv
 from selenium import webdriver
 from selenium.webdriver.firefox.service import Service
@@ -10,7 +12,6 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from bs4 import BeautifulSoup
-import csv
 from youtube_transcript_api import YouTubeTranscriptApi
 
 load_dotenv()
@@ -19,7 +20,9 @@ GECKODRIVER_PATH = os.getenv("GECKODRIVER_PATH")
 TED_ED_EMAIL = os.getenv("TED_ED_EMAIL")
 TED_ED_PASSWORD = os.getenv("TED_ED_PASSWORD")
 SIGN_IN = 1
-MAX_PAGES = 1
+END_PAGE = 1
+START_PAGE = 1
+OUTPUT_FILE = "test.jsonl"
 
 class TedEdScraper:
     def __init__(self):
@@ -91,6 +94,9 @@ class TedEdScraper:
         except:
             return None
 
+    def reg_ex_processing(self, text):
+        return re.sub(r'[\xc2-\xf4][\x80-\xbf]+',lambda m: m.group(0).encode('latin1').decode('utf8'),text)
+
     def get_youtube_subtitle(self, youtube_link, languages=['en']):
         youtube_id = youtube_link.split('v=')[-1]
         transcript_data = {}
@@ -115,7 +121,7 @@ class TedEdScraper:
 
     def extract_question_data(self, firefox):
         question_element = firefox.find_element(By.TAG_NAME, "legend")
-        question_text = question_element.text
+        question_text = self.reg_ex_processing(question_element.text)
         question_data = {
             "question": question_text,
             "options": [],
@@ -135,6 +141,15 @@ class TedEdScraper:
         soup = BeautifulSoup(firefox.page_source, 'html.parser')
         question_links = soup.select('li a[href*="question_number"]')
         return [f"https://ed.ted.com{link['href']}" for link in question_links]
+
+    def check_for_correct_option_exists(self, firefox):
+        try:            
+            correct_option_element = firefox.find_element(By.XPATH, "//span[contains(@class, 'bg-correct-green')]")
+            print("Correct option found")
+            correct_option_text = correct_option_element.text
+            return correct_option_text
+        except:
+            return None
 
     def answering_question(self, firefox, question_url):
         options_list = firefox.find_elements(By.XPATH, "//label[contains(@class, 'cursor-pointer')]")
@@ -171,14 +186,15 @@ class TedEdScraper:
                     print(f"Error while handling incorrect answer: {e}")
         return None
 
-    def process_lesson(self, firefox, lesson_url, page_number, video_number):
+    def process_lesson(self, firefox, lesson_url, page_number, video_number, category_tag):
         firefox.get(lesson_url)
-        title = self.get_lesson_title(firefox)
+        title = self.reg_ex_processing(self.get_lesson_title(firefox))
 
         lesson_data = {
             "page": page_number,
             "lesson": video_number,
-            "title": title.encode('utf-8').decode('unicode_escape'),
+            "title": title,
+            "category": category_tag,
             "url": lesson_url,
             "transcript": {},
             "multiple-choice": []
@@ -187,7 +203,8 @@ class TedEdScraper:
         youtube_link = self.get_youtube_link(firefox)
         if youtube_link:
             transcript = self.get_youtube_subtitle(youtube_link, languages=['en'])
-            lesson_data["transcript"] = {k: v.encode('utf-8').decode('unicode_escape') for k, v in transcript.items()}
+            print(f"Transcript: {transcript['en']}")
+            lesson_data["transcript"] = transcript
         else:
             lesson_data["transcript"] = {"en": "Transcript not available"}
             self.save_transcript_exception(title, lesson_url)
@@ -203,16 +220,21 @@ class TedEdScraper:
                 for option in question_data["options"]:
                     print(f"Option: {option['label']}) {option['text']}")
                     
-                correct_option = self.answering_question(firefox, question_url)
-                if correct_option:
-                    print(f"Correct option: {correct_option}")
-                    question_data["correct_option"] = correct_option
+                if not self.check_for_correct_option_exists(firefox):
+                    print("Answering question...")
+                    correct_option = self.answering_question(firefox, question_url)
+                else:
+                    print("Checking for correct option...")
+                    correct_option = self.check_for_correct_option_exists(firefox)
+                    
+                print(f"Correct option: {correct_option}")
+                question_data["correct_option"] = correct_option
 
         with open(self.log_file, 'a', encoding='utf-8') as log:
             log.write(f"[Page: {page_number}, Video: {video_number}] is completed\n")
         
         self.results.append(lesson_data)
-        with open('results.jsonl', 'a', encoding='utf-8') as jsonlfile:
+        with open(OUTPUT_FILE, 'a', encoding='utf-8') as jsonlfile:
             jsonlfile.write(json.dumps(lesson_data) + '\n')
 
     def scrape_page(self, page_number):
@@ -234,7 +256,7 @@ class TedEdScraper:
         for video_link, category_tag in zip(video_links, categories):
             video_number += 1
             lesson_url = f"https://ed.ted.com{video_link['href']}"
-            self.process_lesson(firefox, lesson_url, page_number, video_number)
+            self.process_lesson(firefox, lesson_url, page_number, video_number, category_tag.text)
 
         firefox.quit()
         print("=" * 20)
@@ -243,7 +265,7 @@ class TedEdScraper:
 
     def scrape_ted_ed(self):
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-            future_to_page = {executor.submit(self.scrape_page, page_number): page_number for page_number in range(1, MAX_PAGES + 1)}
+            future_to_page = {executor.submit(self.scrape_page, page_number): page_number for page_number in range(START_PAGE, END_PAGE + 1)}
 
             for future in concurrent.futures.as_completed(future_to_page):
                 page_number = future_to_page[future]
