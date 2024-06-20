@@ -20,8 +20,8 @@ GECKODRIVER_PATH = os.getenv("GECKODRIVER_PATH")
 TED_ED_EMAIL = os.getenv("TED_ED_EMAIL")
 TED_ED_PASSWORD = os.getenv("TED_ED_PASSWORD")
 SIGN_IN = 1
-END_PAGE = 1
 START_PAGE = 1
+END_PAGE = 122
 OUTPUT_FILE = "test.jsonl"
 
 class TedEdScraper:
@@ -189,6 +189,7 @@ class TedEdScraper:
     def process_lesson(self, firefox, lesson_url, page_number, video_number, category_tag):
         firefox.get(lesson_url)
         title = self.reg_ex_processing(self.get_lesson_title(firefox))
+        print(f"Title: {title}")
 
         lesson_data = {
             "page": page_number,
@@ -203,7 +204,6 @@ class TedEdScraper:
         youtube_link = self.get_youtube_link(firefox)
         if youtube_link:
             transcript = self.get_youtube_subtitle(youtube_link, languages=['en'])
-            print(f"Transcript: {transcript['en']}")
             lesson_data["transcript"] = transcript
         else:
             lesson_data["transcript"] = {"en": "Transcript not available"}
@@ -235,7 +235,7 @@ class TedEdScraper:
         
         self.results.append(lesson_data)
         with open(OUTPUT_FILE, 'a', encoding='utf-8') as jsonlfile:
-            jsonlfile.write(json.dumps(lesson_data) + '\n')
+            jsonlfile.write(json.dumps(lesson_data, ensure_ascii=False) + '\n')
 
     def scrape_page(self, page_number):
         firefox = self.initialize_browser()
